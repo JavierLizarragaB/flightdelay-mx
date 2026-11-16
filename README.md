@@ -3,7 +3,7 @@
 > Pipeline de datos de punta a punta en AWS: ingesta mensual automatizada de **25.7 millones de vuelos** (ene 2023 – ago 2026), arquitectura Medallion (Bronce → Plata → Oro) con jobs de PySpark en AWS Glue sobre tablas Apache Iceberg, modelo de clasificación publicado como API REST y una aplicación web que lo consume.
 
 **Materia:** _[Nombre de la materia]_ · **Universidad Panamericana** · **Maestría en Ciencia de Datos e Innovación Tecnológica de Negocios**
-**Autor(es):** _[Nombre(s)]_ · **Fecha de presentación:** noviembre 2026
+**Autor:** Javier Lizárraga (proyecto individual) · **Fecha de presentación:** noviembre 2026
 
 ---
 
