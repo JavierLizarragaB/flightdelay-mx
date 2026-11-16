@@ -1,0 +1,17 @@
+# Contexto de build = raíz del repo; cada Dockerfile copia solo lo que necesita.
+.git
+.venv
+data
+models
+notebooks
+infra
+reports
+docs
+**/__pycache__
+**/.pytest_cache
+.ruff_cache
+spark-warehouse
+*.zip
+*.csv
+*.parquet
+.env

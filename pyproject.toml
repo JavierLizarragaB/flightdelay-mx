@@ -1,0 +1,39 @@
+[project]
+name = "flightdelay-mx"
+version = "0.1.0"
+description = "Predicción de retrasos en vuelos domésticos de EE.UU. con Medallion en AWS (Glue + Iceberg) y FastAPI"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27"]  # httpx: TestClient de FastAPI
+spark = ["pyspark==3.5.4"]  # misma versión mayor que Glue 5.0
+ml = ["pandas>=2.2", "pyarrow>=16", "scikit-learn>=1.5", "lightgbm>=4.5", "boto3>=1.35"]
+api = ["fastapi>=0.115", "mangum>=0.19", "pydantic>=2.8", "uvicorn>=0.30"]
+app = ["streamlit>=1.38", "requests>=2.32", "pydantic>=2.8"]
+eda = ["matplotlib>=3.9", "boto3>=1.35"]  # notebooks/eda_charts.py
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# El repo no se distribuye como paquete: el código se importa desde la raíz
+# (pytest usa pythonpath = "."; Glue recibe los módulos como --extra-py-files).
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N"]
+# N812: `from pyspark.sql import functions as F` (convención de PySpark).
+# N806: `X` para la matriz de features (convención de ML).
+ignore = ["N812", "N806"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "api/tests"]
+pythonpath = ["."]
+markers = ["spark: tests que requieren PySpark + Java 17"]

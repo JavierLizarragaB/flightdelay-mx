@@ -1,0 +1,47 @@
+# Datos y artefactos (nunca al repo)
+data/
+models/
+*.zip
+*.csv
+*.parquet
+
+# Secretos
+.env
+*.pem
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+
+# Spark local
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.auto.tfvars
+terraform.tfvars
+
+# Lambda / builds
+*.zip.b64
+.build/
+
+# SO / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Plan guardado por `make tf-plan`
+infra/terraform/tfplan
