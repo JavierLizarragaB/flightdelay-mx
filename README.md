@@ -444,7 +444,7 @@ aws configure --profile flightdelay
 ### Desarrollo local
 
 ```bash
-git clone https://github.com/<usuario>/flightdelay-mx.git
+git clone https://github.com/JavierLizarragaB/flightdelay-mx.git
 cd flightdelay-mx
 cp .env.example .env        # ajusta FD_BUCKET
 make venv                   # entorno virtual con todas las dependencias
