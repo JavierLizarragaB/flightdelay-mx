@@ -289,6 +289,10 @@ Con 78/22, un modelo que siempre responde "a tiempo" tiene **76.7 % de accuracy 
 | Baseline "siempre a tiempo" | Piso de referencia (F1 = 0) |
 | Regresión logística | Baseline interpretable |
 | **LightGBM** | Modelo final: maneja categóricas, rápido y ligero para servir |
+| XGBoost | Comparación: otra implementación de *gradient boosting* (`hist`, categóricas nativas) |
+| CatBoost | Comparación: *boosting* con árboles simétricos y codificación categórica ordenada |
+
+Los cinco usan las mismas features, el mismo split temporal, early stopping en validación y el umbral que maximiza F1 en validación (`make train-compare`; resultados en la sección 10).
 
 > **¿Por qué LightGBM y no Spark MLlib para servir?** Servir un modelo de MLlib requiere levantar una sesión de Spark dentro de la API (segundos de arranque y mucha memoria, inviable en Lambda). Spark se usa para el procesamiento masivo; el modelo final se entrena sobre la tabla Oro y se exporta como un artefacto ligero para inferencia con baja latencia.
 
@@ -478,6 +482,7 @@ make pipeline                           # corrida mensual manual (la misma que d
 
 ```bash
 make train                  # UNLOAD de oro → entrena → publica s3://…/models/<versión>/ y latest.json
+make train-compare          # + XGBoost y CatBoost (no publica) → reports/model_comparison.json
 make ecr                    # primera vez: crea los repositorios ECR
 make api-image app-image    # construye (arm64) y sube las imágenes
 make tf-plan tf-apply       # Lambda + API Gateway + ECS (la app queda apagada)
@@ -565,17 +570,21 @@ Sobre los 25.2 M de vuelos de `fd_silver.flights` (y los 460 mil cancelados o de
 
 Prueba = oct 2025 – ago 2026 (**6,337,653 vuelos**, 23.3 % positivos), nunca vista al entrenar ni al elegir umbral o hiperparámetros. Entrenamiento: 16,567,273 vuelos (feb 2023 – jun 2025); validación: 1,764,872 (jul – sep 2025).
 
-| Modelo | F1 (clase 1) | PR-AUC | ROC-AUC | Precision | Recall | Accuracy |
-|---|---|---|---|---|---|---|
-| Siempre "a tiempo" | 0.000 | — | — | — | 0.000 | 0.767 |
-| Regresión logística (1.5 M filas) | 0.433 | 0.375 | 0.669 | 0.347 | 0.575 | 0.649 |
-| **LightGBM** (umbral 0.237) | **0.438** | **0.384** | **0.679** | **0.355** | **0.573** | 0.658 |
+| Modelo | F1 valid. | F1 (clase 1) | PR-AUC | ROC-AUC | Precision | Recall | Accuracy |
+|---|---|---|---|---|---|---|---|
+| Siempre "a tiempo" | 0.000 | 0.000 | — | — | — | 0.000 | 0.767 |
+| Regresión logística (1.5 M filas) | 0.457 | 0.433 | 0.375 | 0.669 | 0.347 | 0.575 | 0.649 |
+| **LightGBM** (umbral 0.237) — **servido** | 0.463 | **0.438** | 0.384 | 0.679 | **0.355** | 0.573 | **0.658** |
+| XGBoost (umbral 0.233, 481 árboles) | 0.464 | 0.440 | 0.386 | 0.679 | 0.352 | 0.585 | 0.653 |
+| CatBoost (umbral 0.237, 3 M filas, 162 árboles) | 0.463 | 0.438 | 0.385 | 0.678 | 0.350 | 0.585 | 0.651 |
+
+**Comparación de los tres *boosting*:** quedan empatados en la práctica: ±0.001 de F1 en validación, ±0.002 en prueba y ±0.002 de PR-AUC; con 6.3 M de vuelos de prueba, esas diferencias son ruido de configuración. **Se mantiene LightGBM** porque la elección se hace en **validación** (donde XGBoost gana por 0.0004 de F1 pero LightGBM tiene el mejor PR-AUC, 0.409 contra 0.406), entrena 2.8 veces más rápido (98 s contra 272 s) y ya es el artefacto que sirve la API. Elegir a XGBoost por su F1 de prueba sería usar el conjunto de prueba para seleccionar el modelo, es decir, fuga de información. CatBoost se entrenó con una muestra de 3 M de filas: con 16.5 M tardaba ~11 s por iteración en una laptop de 8 GB, y su PR-AUC interno (distinto al de scikit-learn) detenía el early stopping en la primera iteración, por lo que se usa Logloss. Detalle en [`reports/model_comparison.json`](reports/model_comparison.json).
 
 **Matriz de confusión de LightGBM en prueba:** TN 3,324,906 · FP 1,537,396 · FN 630,444 · **TP 844,907**: detecta el 57 % de los retrasos; cuando avisa "retraso", acierta el 35.5 % de las veces (contra el 23.3 % de acertar al azar).
 
 **Importancia de features (ganancia):** hora de salida (`dep_hour_sin` 34.9 % + `dep_hour_cos` 4.3 %), `route_delay_rate_30d` 26.6 %, `airline_delay_rate_30d` 7.3 %, `airline` 7.3 %, día de la semana 4.2 %, mes 7.4 %, `days_to_holiday` 3.8 %. Las métricas completas y la configuración están en [`reports/model_metrics.json`](reports/model_metrics.json).
 
-**Lectura honesta:** LightGBM supera claramente al baseline (F1 0 → 0.44) pero solo ligeramente a la logística (+0.005 F1, +0.009 PR-AUC). Se probaron 3 configuraciones de LightGBM en validación y todas quedaron en PR-AUC 0.408–0.410: el techo lo pone la información disponible al comprar el boleto (sin clima ni estado del avión previo), no el algoritmo. Además el F1 cae de 0.463 (validación) a 0.438 (prueba): la proporción de retrasos cambia entre periodos (22.9 % → 23.3 %, con meses de 13 % a 30 %), lo que justifica el reentrenamiento periódico.
+**Lectura honesta:** LightGBM supera claramente al baseline (F1 0 → 0.44) pero solo ligeramente a la logística (+0.005 F1, +0.009 PR-AUC). Se probaron 3 configuraciones de LightGBM en validación (todas en PR-AUC 0.408–0.410) y otras dos bibliotecas de *boosting* que quedan en el mismo punto: el techo lo pone la información disponible al comprar el boleto (sin clima ni estado del avión previo), no el algoritmo. Además el F1 cae de 0.463 (validación) a 0.438 (prueba): la proporción de retrasos cambia entre periodos (22.9 % → 23.3 %, con meses de 13 % a 30 %), lo que justifica el reentrenamiento periódico.
 
 ### Capturas
 
@@ -612,7 +621,7 @@ Todo se destruye con `terraform destroy`.
 ## 12. Limitaciones y trabajo futuro
 
 - **Sin clima:** las condiciones meteorológicas explican buena parte de los retrasos. Se puede integrar clima histórico de NOAA como segunda fuente en Plata.
-- **Poder predictivo moderado (F1 0.44 en prueba):** sin información en tiempo real (clima, estado del avión anterior) el techo es limitado; la mejora de LightGBM sobre la logística es pequeña y lo confirma.
+- **Poder predictivo moderado (F1 0.44 en prueba):** sin información en tiempo real (clima, estado del avión anterior) el techo es limitado; la mejora de LightGBM sobre la logística es pequeña y XGBoost y CatBoost empatan con LightGBM, lo que lo confirma.
 - **Hora local sin zona:** BTS reporta la hora local de cada aeropuerto; las ventanas de 30 días se calculan por fecha, no por instante UTC (diferencia irrelevante a escala de días).
 - **Lookups estáticos:** la API usa las tasas de los últimos 30 días *de los datos* (hasta ago 2026); para fechas lejanas eso supone que la ruta se comporta como en su historia reciente.
 - **Cambios de aerolíneas:** fusiones y cambios de código afectan las series históricas.

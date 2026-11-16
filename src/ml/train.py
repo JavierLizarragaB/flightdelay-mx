@@ -2,6 +2,11 @@
 
 Uso:
     python -m src.ml.train --bucket <bucket> [--upload] [--max-train-rows 8000000]
+    python -m src.ml.train --bucket <bucket> --compare   # + XGBoost y CatBoost
+
+Con --compare se entrenan además XGBoost y CatBoost con los mismos datos, el mismo split,
+early stopping en validación y umbral F1-óptimo de validación. Son solo comparación: el
+modelo exportado y servido por la API sigue siendo LightGBM (ver README, sección 10).
 
 Split temporal (nunca aleatorio: el modelo se usa para predecir el futuro):
     calentamiento  ene 2023            (sin historial para TE/ventanas; no se usa)
@@ -62,7 +67,48 @@ LGB_PARAMS = {
     "verbose": -1,
     "seed": 42,
 }
-LOGREG_SAMPLE = 1_500_000  # la logística es un punto de comparación; 1.5 M filas bastan
+# XGBoost y CatBoost: configuraciones equivalentes a LGB_PARAMS (mismo learning rate,
+# ~31 hojas, regularización L2 = 10, submuestreo de filas y columnas). No se afinaron más
+# para que la comparación mida el algoritmo, no horas de búsqueda de hiperparámetros.
+XGB_PARAMS = {
+    "objective": "binary:logistic",
+    "eval_metric": ["aucpr", "logloss"],
+    "tree_method": "hist",
+    "grow_policy": "lossguide",
+    "max_leaves": 31,
+    "max_depth": 0,
+    "learning_rate": 0.03,
+    # min_child_weight es suma de hessianos p(1-p) ≈ 0.17 por fila: 850 ≈ 5000 filas.
+    "min_child_weight": 850,
+    "subsample": 0.8,
+    "colsample_bytree": 0.7,
+    "lambda": 10.0,
+    "max_cat_to_onehot": 1,  # partición categórica óptima, como LightGBM
+    "seed": 42,
+}
+CATBOOST_PARAMS = {
+    "loss_function": "Logloss",
+    # Early stopping por Logloss: el PRAUC interno de CatBoost no coincide con el de
+    # scikit-learn (0.459 vs 0.358 en validación) y detenía el entrenamiento en la iteración 0.
+    "eval_metric": "Logloss",
+    "iterations": 3000,
+    "learning_rate": 0.08,  # CatBoost (árboles simétricos) converge más lento; 0.03 tardaría horas
+    "depth": 6,  # árbol simétrico de 64 hojas
+    "l2_leaf_reg": 10.0,
+    "rsm": 0.7,
+    "bootstrap_type": "Bernoulli",
+    "subsample": 0.8,
+    "random_seed": 42,
+    "od_type": "Iter",
+    "od_wait": 150,
+    "use_best_model": True,
+    "verbose": 100,
+    "allow_writing_files": False,  # sin carpeta catboost_info/ en el repo
+}
+LOGREG_SAMPLE = 1_500_000
+# CatBoost con 16.5 M de filas tardaba ~11 s por iteración en una laptop de 8 GB (swap);
+# con 3 M de filas el costo es manejable y la comparación sigue siendo representativa.
+CATBOOST_SAMPLE = 3_000_000  # la logística es un punto de comparación; 1.5 M filas bastan
 
 
 def split(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
@@ -87,6 +133,70 @@ def logistic_pipeline() -> Pipeline:
     return Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=500, C=1.0))])
 
 
+def train_xgboost(X: dict[str, np.ndarray], y: dict[str, np.ndarray]) -> dict[str, Any]:
+    import xgboost as xgb
+
+    cat = set(categorical_indices())
+    types = ["c" if i in cat else "q" for i in range(len(MODEL_FEATURES))]
+    kw = {"feature_names": list(MODEL_FEATURES), "feature_types": types, "enable_categorical": True}
+    # QuantileDMatrix cuantiza al construir: ~4x menos memoria que DMatrix con 16 M de filas.
+    dtrain = xgb.QuantileDMatrix(X["train"], y["train"], **kw)
+    dvalid = xgb.QuantileDMatrix(X["valid"], y["valid"], ref=dtrain, **kw)
+    booster = xgb.train(XGB_PARAMS, dtrain, num_boost_round=3000, evals=[(dvalid, "valid")],
+                        early_stopping_rounds=150, verbose_eval=100)  # fmt: skip
+    rng = (0, booster.best_iteration + 1)
+    proba = {
+        s: booster.predict(xgb.DMatrix(X[s], **kw), iteration_range=rng) for s in ("valid", "test")
+    }
+    return {"proba": proba, "best_iteration": booster.best_iteration}
+
+
+def _catboost_frame(X: np.ndarray) -> pd.DataFrame:
+    """CatBoost exige categóricas enteras o texto: NaN (aerolínea desconocida) -> -1."""
+    df = pd.DataFrame(X, columns=list(MODEL_FEATURES))
+    for i in categorical_indices():
+        c = MODEL_FEATURES[i]
+        df[c] = df[c].fillna(-1).astype("int32")
+    return df
+
+
+def train_catboost(X: dict[str, np.ndarray], y: dict[str, np.ndarray]) -> dict[str, Any]:
+    from catboost import CatBoostClassifier, Pool
+
+    cat = categorical_indices()
+    rng = np.random.default_rng(42)
+    n = len(y["train"])
+    idx = np.sort(rng.choice(n, size=min(CATBOOST_SAMPLE, n), replace=False))
+    data_ = {**X, "train": X["train"][idx]}
+    labels = {**y, "train": y["train"][idx]}
+    pool = {s: Pool(_catboost_frame(data_[s]), labels[s], cat_features=cat) for s in data_}
+    model = CatBoostClassifier(**CATBOOST_PARAMS, thread_count=os.cpu_count())
+    model.fit(pool["train"], eval_set=pool["valid"])
+    proba = {s: model.predict_proba(pool[s])[:, 1] for s in ("valid", "test")}
+    return {
+        "proba": proba,
+        "best_iteration": int(model.get_best_iteration()),
+        "train_rows": len(idx),
+    }
+
+
+def evaluate_candidate(name: str, fit, X, y, train_rows: int) -> dict[str, Any]:
+    """Entrena un modelo de comparación y lo evalúa con el mismo protocolo que LightGBM."""
+    t = time.time()
+    out = fit(X, y)
+    p = out["proba"]
+    thr, _ = best_f1_threshold(y["valid"], p["valid"])
+    res = {
+        "valid": classification_metrics(y["valid"], p["valid"], thr),
+        "test": classification_metrics(y["test"], p["test"], thr),
+        "train_rows": out.get("train_rows", train_rows),
+        "best_iteration": out["best_iteration"],
+        "seconds": round(time.time() - t, 1),
+    }
+    print(f"[train] {name} F1 valid {res['valid']['f1']} test {res['test']['f1']}")
+    return res
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--bucket", default=os.environ.get("FD_BUCKET"))
@@ -95,6 +205,8 @@ def main() -> None:
     p.add_argument("--max-train-rows", type=int, default=None)
     p.add_argument("--out-dir", default="models")
     p.add_argument("--upload", action="store_true")
+    p.add_argument("--compare", action="store_true", help="entrena también XGBoost y CatBoost")
+    p.add_argument("--comparison-out", default="reports/model_comparison.json")
     args = p.parse_args()
     if not args.bucket:
         raise SystemExit("Falta --bucket o FD_BUCKET")
@@ -169,6 +281,10 @@ def main() -> None:
         "best_iteration": booster.best_iteration,
         "seconds": round(time.time() - t, 1),
     }
+    if args.compare:
+        for name, fit in (("xgboost", train_xgboost), ("catboost", train_catboost)):
+            results[name] = evaluate_candidate(name, fit, X, y, sizes["train"])
+
     gain = booster.feature_importance(importance_type="gain")
     importance = {
         f: round(float(v / gain.sum()), 4)
@@ -204,6 +320,16 @@ def main() -> None:
         Path(args.out_dir) / version, booster, metadata, export.build_lookups_payload(lookups)
     )
     print(f"[train] artefactos en {out_dir}")
+    if args.compare:
+        comparison = {
+            "version": version,
+            "protocol": "mismo split temporal y features; early stopping y umbral en validación",
+            "splits": metadata["splits"],
+            "params": {"lightgbm": LGB_PARAMS, "xgboost": XGB_PARAMS, "catboost": CATBOOST_PARAMS},
+            "metrics": results,
+        }
+        Path(args.comparison_out).write_text(json.dumps(comparison, indent=2, default=str) + "\n")
+        print(f"[train] comparación en {args.comparison_out}")
     if args.upload:
         uri = export.upload_artifacts(s3, args.bucket, out_dir, version)
         s3.put_object(

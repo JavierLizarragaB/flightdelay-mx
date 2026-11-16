@@ -16,7 +16,7 @@ YM      ?= 2026-08
 JAVA_HOME ?= /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 
 .DEFAULT_GOAL := help
-.PHONY: help venv lint format test test-fast sample ingest ingest-latest lookups bronze silver gold quality pipeline backfill eda train ecr ecr-login api-image app-image api-url api-local app-local app-up app-down app-url tf-init tf-plan tf-apply tf-destroy clean
+.PHONY: help venv lint format test test-fast sample ingest ingest-latest lookups bronze silver gold quality pipeline backfill eda train train-compare ecr ecr-login api-image app-image api-url api-local app-local app-up app-down app-url tf-init tf-plan tf-apply tf-destroy clean
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -96,6 +96,9 @@ eda: ## Regenera las gráficas del análisis exploratorio (docs/img/eda_*.png) d
 
 train: ## Entrena (baseline, logística, LightGBM) y publica el modelo en s3://…/models/
 	$(BIN)/python -m src.ml.train --bucket $$(terraform -chdir=$(TF_DIR) output -raw bucket_name) --upload $(TRAIN_ARGS)
+
+train-compare: ## Compara además XGBoost y CatBoost (no publica; escribe reports/model_comparison.json)
+	$(BIN)/python -m src.ml.train --bucket $$(terraform -chdir=$(TF_DIR) output -raw bucket_name) --compare --out-dir data/compare_models $(TRAIN_ARGS)
 
 quality: ## Muestra el reporte de calidad de plata de un mes (YM=2026-08)
 	@y=$${YM%-*}; m=$${YM#*-}; aws s3 cp s3://$$(terraform -chdir=$(TF_DIR) output -raw bucket_name)/reports/quality_$${y}_$${m}.json -

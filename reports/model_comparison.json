@@ -1,0 +1,265 @@
+{
+  "version": "v20261116-175648",
+  "protocol": "mismo split temporal y features; early stopping y umbral en validaci\u00f3n",
+  "splits": {
+    "train": {
+      "start": "2023-02-01",
+      "end": "2025-06-30",
+      "rows": 16567273
+    },
+    "valid": {
+      "start": "2025-07-01",
+      "end": "2025-09-30",
+      "rows": 1764872
+    },
+    "test": {
+      "start": "2025-10-01",
+      "end": "2100-01-01",
+      "rows": 6337653
+    },
+    "test_effective_end": "2026-08-31"
+  },
+  "params": {
+    "lightgbm": {
+      "objective": "binary",
+      "metric": [
+        "average_precision",
+        "binary_logloss"
+      ],
+      "learning_rate": 0.03,
+      "num_leaves": 31,
+      "min_data_in_leaf": 5000,
+      "feature_fraction": 0.7,
+      "bagging_fraction": 0.8,
+      "bagging_freq": 1,
+      "lambda_l2": 10.0,
+      "cat_smooth": 50,
+      "min_data_per_group": 1000,
+      "verbose": -1,
+      "seed": 42
+    },
+    "xgboost": {
+      "objective": "binary:logistic",
+      "eval_metric": [
+        "aucpr",
+        "logloss"
+      ],
+      "tree_method": "hist",
+      "grow_policy": "lossguide",
+      "max_leaves": 31,
+      "max_depth": 0,
+      "learning_rate": 0.03,
+      "min_child_weight": 850,
+      "subsample": 0.8,
+      "colsample_bytree": 0.7,
+      "lambda": 10.0,
+      "max_cat_to_onehot": 1,
+      "seed": 42
+    },
+    "catboost": {
+      "loss_function": "Logloss",
+      "eval_metric": "Logloss",
+      "iterations": 3000,
+      "learning_rate": 0.08,
+      "depth": 6,
+      "l2_leaf_reg": 10.0,
+      "rsm": 0.7,
+      "bootstrap_type": "Bernoulli",
+      "subsample": 0.8,
+      "random_seed": 42,
+      "od_type": "Iter",
+      "od_wait": 150,
+      "use_best_model": true,
+      "verbose": 100
+    }
+  },
+  "metrics": {
+    "baseline_always_on_time": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": null,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "accuracy": 0.7712,
+        "confusion_matrix": {
+          "tn": 1361081,
+          "fp": 0,
+          "fn": 403791,
+          "tp": 0
+        }
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": null,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "accuracy": 0.7672,
+        "confusion_matrix": {
+          "tn": 4862302,
+          "fp": 0,
+          "fn": 1475351,
+          "tp": 0
+        }
+      }
+    },
+    "logistic_regression": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": 0.2404,
+        "f1": 0.4565,
+        "precision": 0.3557,
+        "recall": 0.6372,
+        "accuracy": 0.6529,
+        "confusion_matrix": {
+          "tn": 894978,
+          "fp": 466103,
+          "fn": 146483,
+          "tp": 257308
+        },
+        "pr_auc": 0.3992,
+        "roc_auc": 0.6987
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": 0.2404,
+        "f1": 0.4326,
+        "precision": 0.3468,
+        "recall": 0.5748,
+        "accuracy": 0.6489,
+        "confusion_matrix": {
+          "tn": 3264745,
+          "fp": 1597557,
+          "fn": 627300,
+          "tp": 848051
+        },
+        "pr_auc": 0.3746,
+        "roc_auc": 0.6689
+      },
+      "train_rows": 1500000,
+      "seconds": 17.8
+    },
+    "lightgbm": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": 0.2367,
+        "f1": 0.4631,
+        "precision": 0.3603,
+        "recall": 0.6477,
+        "accuracy": 0.6564,
+        "confusion_matrix": {
+          "tn": 896866,
+          "fp": 464215,
+          "fn": 142274,
+          "tp": 261517
+        },
+        "pr_auc": 0.4092,
+        "roc_auc": 0.7082
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": 0.2367,
+        "f1": 0.438,
+        "precision": 0.3547,
+        "recall": 0.5727,
+        "accuracy": 0.6579,
+        "confusion_matrix": {
+          "tn": 3324906,
+          "fp": 1537396,
+          "fn": 630444,
+          "tp": 844907
+        },
+        "pr_auc": 0.3841,
+        "roc_auc": 0.6788
+      },
+      "train_rows": 16567273,
+      "best_iteration": 146,
+      "seconds": 98.5
+    },
+    "xgboost": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": 0.2329,
+        "f1": 0.4635,
+        "precision": 0.3598,
+        "recall": 0.6511,
+        "accuracy": 0.6551,
+        "confusion_matrix": {
+          "tn": 893341,
+          "fp": 467740,
+          "fn": 140880,
+          "tp": 262911
+        },
+        "pr_auc": 0.4063,
+        "roc_auc": 0.7087
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": 0.2329,
+        "f1": 0.4395,
+        "precision": 0.352,
+        "recall": 0.585,
+        "accuracy": 0.6527,
+        "confusion_matrix": {
+          "tn": 3273233,
+          "fp": 1589069,
+          "fn": 612250,
+          "tp": 863101
+        },
+        "pr_auc": 0.3859,
+        "roc_auc": 0.6794
+      },
+      "train_rows": 16567273,
+      "best_iteration": 481,
+      "seconds": 271.5
+    },
+    "catboost": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": 0.2368,
+        "f1": 0.4626,
+        "precision": 0.3615,
+        "recall": 0.6421,
+        "accuracy": 0.6587,
+        "confusion_matrix": {
+          "tn": 903255,
+          "fp": 457826,
+          "fn": 144533,
+          "tp": 259258
+        },
+        "pr_auc": 0.4082,
+        "roc_auc": 0.7074
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": 0.2368,
+        "f1": 0.4382,
+        "precision": 0.3504,
+        "recall": 0.5847,
+        "accuracy": 0.651,
+        "confusion_matrix": {
+          "tn": 3263333,
+          "fp": 1598969,
+          "fn": 612731,
+          "tp": 862620
+        },
+        "pr_auc": 0.3847,
+        "roc_auc": 0.6781
+      },
+      "train_rows": 3000000,
+      "best_iteration": 161,
+      "seconds": 180.9
+    }
+  }
+}

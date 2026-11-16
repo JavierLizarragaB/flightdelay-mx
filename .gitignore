@@ -45,3 +45,4 @@ terraform.tfvars
 
 # Plan guardado por `make tf-plan`
 infra/terraform/tfplan
+catboost_info/
