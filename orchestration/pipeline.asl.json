@@ -1,0 +1,213 @@
+{
+  "Comment": "FlightDelay-MX: ingesta BTS -> bronce -> plata -> oro. Entrada {} = corrida mensual (último mes publicado); {\"year\":2026,\"month\":8} = un mes concreto; {\"backfill\":{\"start\":\"2023-01\",\"end\":\"2026-08\"}} = histórico; {\"reprocess\":true} reprocesa aunque el mes ya esté ingerido.",
+  "StartAt": "Modo",
+  "States": {
+    "Modo": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.backfill", "IsPresent": true, "Next": "PlanearBackfill" }
+      ],
+      "Default": "IngestarMes"
+    },
+
+    "IngestarMes": {
+      "Type": "Task",
+      "Comment": "Lambda de ingesta. Idempotente: si el mes ya tiene _manifest.json devuelve already_ingested.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ingest_lambda_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": { "ingest.$": "$.Payload" },
+      "ResultPath": "$.result",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2
+        },
+        {
+          "Comment": "BTS es lento e inestable: reintentar fallos de descarga.",
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 60, "MaxAttempts": 2, "BackoffRate": 2
+        }
+      ],
+      "Next": "EstadoIngesta"
+    },
+
+    "EstadoIngesta": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.result.ingest.status", "StringEquals": "ingested", "Next": "PrepararMes" },
+        {
+          "And": [
+            { "Variable": "$.result.ingest.status", "StringEquals": "already_ingested" },
+            { "Variable": "$.reprocess", "IsPresent": true },
+            { "Variable": "$.reprocess", "BooleanEquals": true }
+          ],
+          "Next": "PrepararMes"
+        }
+      ],
+      "Default": "SinDatosNuevos"
+    },
+
+    "SinDatosNuevos": {
+      "Type": "Succeed",
+      "Comment": "Mes ya procesado o BTS aún no publica: no se gasta en Glue."
+    },
+
+    "PrepararMes": {
+      "Type": "Pass",
+      "Comment": "Un mes cabe de sobra en el mínimo de Glue (2 x G.1X).",
+      "Parameters": {
+        "year_months.$": "$.result.ingest.year_month",
+        "bronze": { "workers": 2, "timeout": 30 },
+        "silver": { "workers": 2, "timeout": 30 }
+      },
+      "Next": "ActualizarCatalogos"
+    },
+
+    "PlanearBackfill": {
+      "Type": "Task",
+      "Comment": "Step Functions no genera rangos de fechas: la Lambda expande start..end a una lista de meses.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ingest_lambda_arn}",
+        "Payload": { "plan.$": "$.backfill" }
+      },
+      "ResultSelector": { "plan.$": "$.Payload" },
+      "ResultPath": "$.result",
+      "Next": "IngestarMeses"
+    },
+
+    "IngestarMeses": {
+      "Type": "Map",
+      "Comment": "Descarga cada mes en paralelo (4 a la vez, para no saturar a BTS). Los meses ya ingeridos se saltan solos.",
+      "ItemsPath": "$.result.plan.months",
+      "MaxConcurrency": 4,
+      "ItemProcessor": {
+        "ProcessorConfig": { "Mode": "INLINE" },
+        "StartAt": "IngestarUnMes",
+        "States": {
+          "IngestarUnMes": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${ingest_lambda_arn}",
+              "Payload.$": "$"
+            },
+            "ResultSelector": {
+              "year_month.$": "$.Payload.year_month",
+              "status.$": "$.Payload.status"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": ["States.TaskFailed"],
+                "IntervalSeconds": 30, "MaxAttempts": 3, "BackoffRate": 2
+              }
+            ],
+            "Next": "MesPublicado"
+          },
+          "MesPublicado": {
+            "Type": "Choice",
+            "Choices": [
+              { "Variable": "$.status", "StringEquals": "not_published", "Next": "MesNoPublicado" }
+            ],
+            "Default": "MesListo"
+          },
+          "MesNoPublicado": {
+            "Type": "Fail",
+            "Error": "MonthNotPublished",
+            "Cause": "Un mes del rango de backfill no está publicado en BTS; ajusta 'end'."
+          },
+          "MesListo": { "Type": "Succeed" }
+        }
+      },
+      "ResultPath": "$.ingested",
+      "Next": "PrepararBackfill"
+    },
+
+    "PrepararBackfill": {
+      "Type": "Pass",
+      "Comment": "Bronce: una sola escritura grande (~12 GB de CSV) -> más workers. Plata: procesa mes por mes en secuencia, más workers casi no ayudan -> mínimo y más tiempo.",
+      "Parameters": {
+        "year_months.$": "$.result.plan.year_months",
+        "bronze": { "workers": 6, "timeout": 120 },
+        "silver": { "workers": 2, "timeout": 180 }
+      },
+      "Next": "ActualizarCatalogos"
+    },
+
+    "ActualizarCatalogos": {
+      "Type": "Task",
+      "Comment": "Catálogos BTS (aerolíneas, aeropuertos) vigentes antes de plata.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ingest_lambda_arn}",
+        "Payload": { "lookups": true }
+      },
+      "ResultPath": null,
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 30, "MaxAttempts": 2, "BackoffRate": 2 }
+      ],
+      "Next": "Bronce"
+    },
+
+    "Bronce": {
+      "Type": "Task",
+      "Comment": "landing -> fd_bronze.flights_raw. .sync espera a que termine el job.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "${bronze_job}",
+        "Arguments": { "--year_months.$": "$.year_months" },
+        "WorkerType": "G.1X",
+        "NumberOfWorkers.$": "$.bronze.workers",
+        "Timeout.$": "$.bronze.timeout"
+      },
+      "ResultSelector": {
+        "run_id.$": "$.Id",
+        "seconds.$": "$.ExecutionTime"
+      },
+      "ResultPath": "$.bronze_run",
+      "Next": "Plata"
+    },
+
+    "Plata": {
+      "Type": "Task",
+      "Comment": "fd_bronze -> fd_silver.flights / flights_disrupted + reports/quality_<yyyy_mm>.json.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "${silver_job}",
+        "Arguments": { "--year_months.$": "$.year_months" },
+        "WorkerType": "G.1X",
+        "NumberOfWorkers.$": "$.silver.workers",
+        "Timeout.$": "$.silver.timeout"
+      },
+      "ResultSelector": {
+        "run_id.$": "$.Id",
+        "seconds.$": "$.ExecutionTime"
+      },
+      "ResultPath": "$.silver_run",
+      "Next": "Oro"
+    },
+
+    "Oro": {
+      "Type": "Task",
+      "Comment": "fd_silver.flights -> fd_gold.features_flights + lookups. Se recalcula completo: las features históricas dependen de toda la historia.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "${gold_job}",
+        "WorkerType": "G.1X",
+        "NumberOfWorkers": 4,
+        "Timeout": 60
+      },
+      "ResultSelector": {
+        "run_id.$": "$.Id",
+        "seconds.$": "$.ExecutionTime"
+      },
+      "ResultPath": "$.gold_run",
+      "Next": "Listo"
+    },
+
+    "Listo": { "Type": "Succeed" }
+  }
+}
