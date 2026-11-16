@@ -1,0 +1,5 @@
+# Versiones fijadas = las probadas localmente (pytest tests/test_api_client.py).
+streamlit==1.67.0
+requests==2.34.2
+pydantic==2.14.3
+pandas==3.1.1
