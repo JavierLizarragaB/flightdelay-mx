@@ -1,0 +1,215 @@
+{
+  "version": "v20261116-022934",
+  "trained_at": "2026-11-16T02:32:05+00:00",
+  "model_type": "lightgbm",
+  "target": "arr_del15",
+  "task": "binary_classification",
+  "primary_metric": "f1_positive_class",
+  "features": [
+    "airline",
+    "day_of_week",
+    "origin_te",
+    "dest_te",
+    "dep_hour_sin",
+    "dep_hour_cos",
+    "month_sin",
+    "month_cos",
+    "distance",
+    "crs_elapsed_time",
+    "days_to_holiday",
+    "route_delay_rate_30d",
+    "origin_delay_rate_30d",
+    "airline_delay_rate_30d"
+  ],
+  "categorical_features": [
+    "airline",
+    "day_of_week"
+  ],
+  "airline_levels": [
+    "9E",
+    "AA",
+    "AS",
+    "B6",
+    "DL",
+    "F9",
+    "G4",
+    "HA",
+    "MQ",
+    "NK",
+    "OH",
+    "OO",
+    "UA",
+    "WN",
+    "YX"
+  ],
+  "threshold": 0.2367,
+  "best_iteration": 146,
+  "params": {
+    "objective": "binary",
+    "metric": [
+      "average_precision",
+      "binary_logloss"
+    ],
+    "learning_rate": 0.03,
+    "num_leaves": 31,
+    "min_data_in_leaf": 5000,
+    "feature_fraction": 0.7,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 1,
+    "lambda_l2": 10.0,
+    "cat_smooth": 50,
+    "min_data_per_group": 1000,
+    "verbose": -1,
+    "seed": 42
+  },
+  "splits": {
+    "train": {
+      "start": "2023-02-01",
+      "end": "2025-06-30",
+      "rows": 16567273
+    },
+    "valid": {
+      "start": "2025-07-01",
+      "end": "2025-09-30",
+      "rows": 1764872
+    },
+    "test": {
+      "start": "2025-10-01",
+      "end": "2100-01-01",
+      "rows": 6337653
+    },
+    "test_effective_end": "2026-08-31"
+  },
+  "data": {
+    "rows_total": 25196995,
+    "export_tag": "20261116T021757"
+  },
+  "metrics": {
+    "baseline_always_on_time": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": null,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "accuracy": 0.7712,
+        "confusion_matrix": {
+          "tn": 1361081,
+          "fp": 0,
+          "fn": 403791,
+          "tp": 0
+        }
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": null,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "accuracy": 0.7672,
+        "confusion_matrix": {
+          "tn": 4862302,
+          "fp": 0,
+          "fn": 1475351,
+          "tp": 0
+        }
+      }
+    },
+    "logistic_regression": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": 0.2404,
+        "f1": 0.4565,
+        "precision": 0.3557,
+        "recall": 0.6372,
+        "accuracy": 0.6529,
+        "confusion_matrix": {
+          "tn": 894978,
+          "fp": 466103,
+          "fn": 146483,
+          "tp": 257308
+        },
+        "pr_auc": 0.3992,
+        "roc_auc": 0.6987
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": 0.2404,
+        "f1": 0.4326,
+        "precision": 0.3468,
+        "recall": 0.5748,
+        "accuracy": 0.6489,
+        "confusion_matrix": {
+          "tn": 3264745,
+          "fp": 1597557,
+          "fn": 627300,
+          "tp": 848051
+        },
+        "pr_auc": 0.3746,
+        "roc_auc": 0.6689
+      },
+      "train_rows": 1500000,
+      "seconds": 15.3
+    },
+    "lightgbm": {
+      "valid": {
+        "n": 1764872,
+        "positive_rate": 0.2288,
+        "threshold": 0.2367,
+        "f1": 0.4631,
+        "precision": 0.3603,
+        "recall": 0.6477,
+        "accuracy": 0.6564,
+        "confusion_matrix": {
+          "tn": 896866,
+          "fp": 464215,
+          "fn": 142274,
+          "tp": 261517
+        },
+        "pr_auc": 0.4092,
+        "roc_auc": 0.7082
+      },
+      "test": {
+        "n": 6337653,
+        "positive_rate": 0.2328,
+        "threshold": 0.2367,
+        "f1": 0.438,
+        "precision": 0.3547,
+        "recall": 0.5727,
+        "accuracy": 0.6579,
+        "confusion_matrix": {
+          "tn": 3324906,
+          "fp": 1537396,
+          "fn": 630444,
+          "tp": 844907
+        },
+        "pr_auc": 0.3841,
+        "roc_auc": 0.6788
+      },
+      "train_rows": 16567273,
+      "best_iteration": 146,
+      "seconds": 125.5
+    }
+  },
+  "feature_importance_gain": {
+    "dep_hour_sin": 0.3491,
+    "route_delay_rate_30d": 0.2663,
+    "airline_delay_rate_30d": 0.0733,
+    "airline": 0.0728,
+    "dep_hour_cos": 0.0432,
+    "day_of_week": 0.042,
+    "month_sin": 0.0388,
+    "days_to_holiday": 0.0383,
+    "month_cos": 0.0356,
+    "origin_delay_rate_30d": 0.0259,
+    "distance": 0.0063,
+    "origin_te": 0.0032,
+    "dest_te": 0.0027,
+    "crs_elapsed_time": 0.0026
+  },
+  "lookups_as_of": "2026-08-31"
+}
